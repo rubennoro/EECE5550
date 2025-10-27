@@ -1,5 +1,7 @@
 print("Q2")
 import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 file_path_x = 'pclX.txt'
 file_path_y = 'pclY.txt'
@@ -35,6 +37,19 @@ class ScanMatching:
     def __init__(self):
         pass
 
+    def RSME(self, X, Y, t_init, R_init, d_max, num_ICP_iters):
+        t, R, C = self.ICP(X, Y, t_init, R_init, d_max, num_ICP_iters)
+        
+        K = len(C)
+        rmse = 0
+        for k in C:
+            x_transformed = np.dot(R, X[k[0]]) + t
+            rmse += np.linalg.norm(Y[k[1]] - x_transformed)**2
+            rmse /= K
+            rmse = np.sqrt(rmse)
+        
+        return t, R, rmse
+    
     def ICP(self, X, Y, t, R, d_max, iters):
         C = None
         for i in range(iters):
@@ -122,4 +137,27 @@ R_init = np.eye(3)
 d_max = 0.25
 num_ICP_iters = 30
 p2 = ScanMatching()
-print(p2.ICP(X, Y, t_init, R_init, d_max, num_ICP_iters))
+t, R, rmse = p2.RSME(X, Y, t_init, R_init, d_max, num_ICP_iters)
+
+x_transformed = [(np.dot(R, X[i]) + t) for i in range(X)]
+
+# Plotting both point clouds on the same 3D axes
+fig = plt.figure()
+ax = fig.add_subplot(111, projection='3d')
+
+# Plot original Y in blue
+Y = np.array(Y)
+ax.scatter(Y[:, 0], Y[:, 1], Y[:, 2], color='b', label='Point Cloud Y')
+
+# Plot transformed X in red
+X_transformed = np.array(x_transformed)
+ax.scatter(X_transformed[:, 0], X_transformed[:, 1], X_transformed[:, 2], color='r', label='Transformed Point Cloud X')
+
+# Set labels and title
+ax.set_xlabel('X')
+ax.set_ylabel('Y')
+ax.set_zlabel('Z')
+ax.set_title('Point Cloud Matching: Y (Blue) and Transformed X (Red)')
+ax.legend()
+
+plt.show()

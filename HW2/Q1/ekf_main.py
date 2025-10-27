@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
 
 '''
 0 < t < 10
@@ -32,106 +31,111 @@ class ExtendedKalmanFilter:
         self.velocity = [0, 0]
     
     def velo(self, t):
-        if 0 <= t < 10:
+        if 0 <= t <= 10:
             self.velocity = np.array([1, 0])
-        elif 10 <= t < 20:
+        elif 10 < t <= 20:
             self.velocity = np.array([0, -1])
-        elif 20 <= t < 30:
+        elif 20 < t <= 30:
             self.velocity = np.array([-1, 0])
-        elif 30 <= t < 40:
+        elif 30 < t < 40:
             self.velocity = np.array([0, 1])
         
     # State transition model
-    def g(self, mu_prev):
+    def state_transition(self, mu_prev):
         vx, vy = self.velocity
         px, py = mu_prev
         px_next = px + self.dt * vx
         py_next = py + self.dt * vy
 
-        new_arr = np.array([px_next, py_next])
-        return new_arr
+        return np.array([px_next, py_next])
     
-    def g_jacobian(self):
+    def state_jacobian(self):
         """
         A constant jacobian of the state estimation model g().
         This is a 4x4 matrix for each of the 2 state vars px, py.
         and the states [px + dt * vx, py + dt * vy].
         """
-        jacobian = np.array([
+        return np.array([
             [1, 0],
             [0, 1]
         ])
-        return jacobian
 
-    def h(self, mu):
+    def measurement_model(self, mu):
         px, py = mu
         dist_one = np.sqrt((self.l1[0] - px)**2 + (self.l1[1] - py)**2)
         dist_two = np.sqrt((self.l2[0] - px)**2 + (self.l2[1] - py)**2)
-        z_t = np.array([
-            dist_one,
-            dist_two
-        ])
-        return z_t
+        return np.array([dist_one, dist_two])
 
-    def h_jacobian(self, mu):
+    def meas_jacobian(self, mu):
         """
         Jacobian math for the measurement model h().
         This is a 2x4 matrix, with 1x2 input matrix for the h() euclidean distance
         between the believed pose and two landmarks. There are 4 state vars, for a 2x4 matrix.
         """
-        vx, vy = self.velocity
+        #vx, vy = self.velocity
         px, py = mu
         dist_one = np.sqrt((self.l1[0] - px)**2 + (self.l1[1] - py)**2)
         dist_two = np.sqrt((self.l2[0] - px)**2 + (self.l2[1] - py)**2)
-
-        ind_zero = (self.l1[0] - px) / dist_one
-        ind_one = (self.l1[1] - py) / dist_one
-        ind_two = (self.l2[0] - px) / dist_two
-        ind_three = (self.l2[1] - py) / dist_two
+        
+        h00 = (px - self.l1[0]) / dist_one
+        h01 = (py - self.l1[1]) / dist_one
+        
+        h10 = (px - self.l2[0]) / dist_two
+        h11 = (py - self.l2[1]) / dist_two
         
         jacobian = np.array([
-            [ind_zero, ind_one],
-            [ind_two, ind_three]
+            [h00, h01],
+            [h10, h11]
             ])
         return jacobian
 
     def EKF(self, mean_init, cov_init, z_t):
         # This outputs a 2x1 vector for px, py
-        mean_hat = self.g(mean_init)
-
-        # 2x2 jacobian for the state propagation
-        g_jacob = self.g_jacobian()
+        mean_hat = self.state_transition(mean_init)
+        #print(mean_hat)
+        g_jacob = self.state_jacobian()
+        cov_hat = g_jacob @ cov_init @ g_jacob.T + self.r_cov
 
         # 2x2 jacobian for the meas model
-        h_jacob = self.h_jacobian(mean_hat)
+        h_jacob = self.meas_jacobian(mean_hat)
+        z_pred = self.measurement_model(mean_hat)
 
-        cov_hat = g_jacob @ cov_init @ g_jacob.T + self.r_cov
-        print(cov_hat)
+        S = h_jacob @ cov_hat @ h_jacob.T + self.q_cov
+        k_gain = cov_hat @ h_jacob.T @ np.linalg.inv(S)
 
-        k_gain = cov_hat @ h_jacob.T @ np.linalg.inv(h_jacob @ cov_hat @ h_jacob.T + self.q_cov)
-
-        mean = mean_hat + k_gain @ (z_t - self.h(mean_hat))
-        print(mean)
+        y = z_t - z_pred
+        #print(z_pred)
+        mean = mean_hat + k_gain @ y
         cov = (np.eye(2) - k_gain @ h_jacob) @ cov_hat
-        print(cov)
+        #print(mean)
         return mean, cov
     
     def process(self, mean_init, cov_init, z_t):
-
+        """
+        mean_init starts as [0, 0]
+        cov_init starts as I_2
+        z_t starts as [0, 0]
+        """
         t = 0
         true_positions = []
         estimated_means = []
         estimated_covs = []
+        true_pos = mean_init
+        mean_pred = mean_init 
 
         while t < self.time:
-
-            true_positions.append(self.g(mean_init))
-            # Update the velocity
             self.velo(t)
 
-            mean_init, cov_init = self.EKF(mean_init, cov_init, z_t)
+            # True position starts at 0, 0 and then moves forward after t > 0
+            true_pos = self.state_transition(true_pos)
+            true_positions.append(true_pos)
 
-            estimated_means.append(mean_init)
+            z_t = self.measurement_model(true_pos) + np.random.multivariate_normal(mean=[0, 0], cov=self.q_cov)
+            #print(new_meas)
+            
+            mean_pred, cov_init = self.EKF(mean_pred, cov_init, z_t)
+            
+            estimated_means.append(mean_pred)
             estimated_covs.append(cov_init)
             # Update the time
             t += self.dt
@@ -154,53 +158,34 @@ l2 = np.array([-5, 5])
 x = np.array([0, 0])  # belief about pose
 p = np.eye(2) #belief about cov
 
-z_true = np.array([
-    np.linalg.norm(l1 - np.array([0, 0])),
-    np.linalg.norm(l2 - np.array([0, 0]))
-])
-
-noise = np.random.multivariate_normal(mean=[0, 0], cov=Q)
-z_t = z_true + noise
+z_t = np.array([0, 0])
 
 ekf = ExtendedKalmanFilter(dt, time_total, R, Q, l1, l2)
 
-'''
-GPT code below.
-'''
 # Get the true robot positions, estimated means, and estimated covariances
 true_positions, estimated_means, estimated_covs = ekf.process(x, p, z_t)
+sigma_bounds = np.sqrt(np.array([np.diag(P) for P in estimated_covs]))[:, :2] * 3
 
-# Plotting
-plt.figure(figsize=(10, 8))
+plt.figure(figsize=(15, 15))  # Adjusted figure size
+plt.scatter([l1[0], l2[0]], [l1[1], l2[1]], c='black', marker='.', label='Landmarks')
+plt.plot(true_positions[:,0], true_positions[:,1], 'b-', label='True Path')
+plt.plot(estimated_means[:, 0], estimated_means[:, 1], 'g-', label='Estimated Path')
 
-# Plot landmarks
-plt.scatter(l1[0], l1[1], color='r', label="Landmark 1", zorder=5)
-plt.scatter(l2[0], l2[1], color='g', label="Landmark 2", zorder=5)
-
-# Plot true robot trajectory
-true_positions = np.array(true_positions)
-plt.plot(true_positions[:, 0], true_positions[:, 1], label="True Path", color='blue', linewidth=2)
-
-# Plot estimated robot trajectory with 3-sigma confidence bounds
-estimated_means = np.array(estimated_means)
-for i in range(0, len(estimated_means), 5):  # Show every 5th point for clarity
-    mean = estimated_means[i]
-    cov = estimated_covs[i]
-
-    # Extract the standard deviations (3σ bounds)
-    std_dev = np.sqrt(np.diag(cov))  # Standard deviations in x and y
-    # Check if the standard deviations are large enough
-    if std_dev[0] > 0.1 and std_dev[1] > 0.1:  # Threshold to avoid plotting very small ellipses
-        # Plot the ellipse with 3σ bounds
-        ellipse = Ellipse(mean, 3 * std_dev[0], 3 * std_dev[1], edgecolor='orange', facecolor='none', linewidth=1)
-        plt.gca().add_patch(ellipse)
-        
-# Plot estimated mean path
-plt.plot(estimated_means[:, 0], estimated_means[:, 1], label="Estimated Path (Mean)", color='orange', linestyle='--', linewidth=2)
-
-plt.xlabel("X Position")
-plt.ylabel("Y Position")
-plt.title("EKF Robot Localization with 3σ Confidence Bounds")
-plt.legend(loc='best')
+plt.xlabel('x pos')
+plt.ylabel('y pos')
+plt.title('actual path vs. estimated path')
+plt.legend()
 plt.grid(True)
+
+plt.figure(figsize=(10, 5))  # Adjusted figure size
+timesteps = time_total / dt
+plt.plot(range(int(timesteps)), sigma_bounds[:, 0], 'rp-', label='x 3 sigma')
+plt.plot(range(int(timesteps)), sigma_bounds[:, 1], 'yp-', label='y 3 sigma')
+
+plt.xlabel('time step')
+plt.ylabel('3 sigma')
+plt.title('3 sigma plotted against time')
+plt.legend()
+plt.grid(True)
+
 plt.show()
