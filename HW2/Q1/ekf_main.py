@@ -90,6 +90,15 @@ class ExtendedKalmanFilter:
         return jacobian
 
     def EKF(self, mean_init, cov_init, z_t):
+        """
+        1) Takes measurement for mean of x,y poses using state model.
+        2) Get the state model jacobian G.
+        3) Updates cov with state transition jacobian G.
+        4) Meas. model jacobian H.
+        5) Prediction for next point z given the previous state.
+        6) K-gain calculation with H and meas model Q cov.
+        7) Output, the updated mean and cov calcs with meas model prediction.
+        """
         # This outputs a 2x1 vector for px, py
         mean_hat = self.state_transition(mean_init)
         #print(mean_hat)
