@@ -163,14 +163,14 @@ mean_pos = np.mean(poses, axis=0)
 covariance_pos = np.cov(poses, rowvar=False)
 
 print("Mean: ", mean_pos)
-print("Cov: ", covariance_pos)
+print("Cov: \n", covariance_pos)
 
 plt.figure(figsize=(8, 6))
 plt.scatter(poses[:, 0], poses[:, 1], s=10, c='purple', label='particles')
 plt.scatter(mean_pos[0], mean_pos[1], c='green', marker='o', label='mean')
-plt.xlabel('x pos')
-plt.ylabel('y pos')
-plt.title('particles at t = 10')
+plt.xlabel('X Pos')
+plt.ylabel('Y Pos')
+plt.title('Particles for t=10')
 plt.legend()
 plt.grid(True)
 
@@ -179,63 +179,41 @@ plt.show()
 """
 Part F.
 """
+# Reinstantiate object 
+
 particle_filter = ParticleFilter(l_wheel_cov, r_wheel_cov, rad, width, left_wheel_init, right_wheel_init)
-init_particles = [Pose(0, 0, 0).matrix() for _ in range(N)]
-t0 = 0
-t1 = 5
-zero_to_five_particles = particle_filter.propagation(init_particles, t0, t1)
+# Define time intervals
+times = [0, 5, 10, 15, 20]
 
-# Collect (x,y) Poses
-poses = np.array([(pose[0, 2], pose[1, 2]) for pose in zero_to_five_particles])
+# Initialize
+particle_sets = []
+current_particles = [Pose(0, 0, 0).matrix() for _ in range(N)]
 
-# Mean and Cov 
-mean_pos = np.mean(poses, axis=0)
-covariance_pos = np.cov(poses, rowvar=False)
-print("Mean 0 to 5 t: ", mean_pos)
-print("Cov 0 to 5 t: ", covariance_pos)
+for i in range(1, len(times)):
+    t1, t2 = times[i - 1], times[i]
+    
+    # Propagate from t1 to t2
+    current_particles = particle_filter.propagation(current_particles, t1, t2)
+    
+    # Store the result for plotting later
+    particle_sets.append(current_particles)
+    
+    # Extract (x, y) positions
+    poses = np.array([(pose[0, 2], pose[1, 2]) for pose in current_particles])
+    
+    # Compute mean and covariance
+    mean_pos = np.mean(poses, axis=0)
+    covariance_pos = np.cov(poses, rowvar=False)
+    
+    print(f"Mean {t1} to {t2}: {mean_pos}")
+    print(f"Cov {t1} to {t2}:\n{covariance_pos}\n")
 
-
-t2 = 10
-five_to_ten_particles = particle_filter.propagation(zero_to_five_particles, t1, t2)
-
-# Collect (x,y) Poses
-poses = np.array([(pose[0, 2], pose[1, 2]) for pose in five_to_ten_particles])
-
-# Mean and Cov 
-mean_pos = np.mean(poses, axis=0)
-covariance_pos = np.cov(poses, rowvar=False)
-print("Mean 5 to 10 t: ", mean_pos)
-print("Cov 5 to 10 t: ", covariance_pos)
-
-t3 = 15
-ten_to_fift_particles = particle_filter.propagation(five_to_ten_particles, t2, t3)
-
-# Collect (x,y) Poses
-poses = np.array([(pose[0, 2], pose[1, 2]) for pose in ten_to_fift_particles])
-
-# Mean and Cov 
-mean_pos = np.mean(poses, axis=0)
-covariance_pos = np.cov(poses, rowvar=False)
-print("Mean 10 to 15 t: ", mean_pos)
-print("Cov 10 to 15 t: ", covariance_pos)
-
-t4 = 20
-fift_to_twent_particles = particle_filter.propagation(ten_to_fift_particles, t3, t4)
-# Collect (x,y) Poses
-poses = np.array([(pose[0, 2], pose[1, 2]) for pose in fift_to_twent_particles])
-
-# Mean and Cov 
-mean_pos = np.mean(poses, axis=0)
-covariance_pos = np.cov(poses, rowvar=False)
-print("Mean 15 to 20 t: ", mean_pos)
-print("Cov 15 to 20 t: ", covariance_pos)
-
-particle_sets = [zero_to_five_particles, five_to_ten_particles, ten_to_fift_particles, fift_to_twent_particles]
-titles = ['t = 5', 't = 10', 't = 15', 't = 20']
-
-fig, axes = plt.subplots(2, 2, figsize=(12, 10)) 
-axes = axes.flatten()
+titles = [f't = {t}' for t in times[1:]]
 colors = ['purple', 'blue', 'orange', 'green']
+
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+axes = axes.flatten()
+
 for ax, particles, title, color in zip(axes, particle_sets, titles, colors):
     positions = np.array([(p[0, 2], p[1, 2]) for p in particles])
     ax.scatter(positions[:, 0], positions[:, 1], s=10, c=color, alpha=0.6)
@@ -256,7 +234,44 @@ plt.show()
 """
 Part G.
 """
+N = 1000
 z_5 = np.array([1.6561, 1.2847])
 z_10 = np.array([1.0505, 3.1059])
 z_15 = np.array([-0.9875, 3.2118])
 z_20 = np.array([-1.6450, 1.1978])
+z_arr = np.array([z_5, z_10, z_15, z_20])
+
+times = [0, 5, 10, 15, 20]
+particle_sets = []
+current_particles = [Pose(0, 0, 0).matrix() for _ in range(N)]
+
+avg_poses = []
+
+for i in range(1, len(times)):
+    t1, t2 = times[i - 1], times[i]
+
+    current_particles = particle_filter.propagation(current_particles, t1, t2)
+
+    meas = z_arr[i - 1]
+
+    # p_cov is the meas noise
+    current_particles = particle_filter.update(current_particles, meas, p_cov)
+
+    poses = np.array([(pose[0, 2], pose[1, 2]) for pose in current_particles])
+
+    mean_pos = np.mean(poses, axis=0)
+    avg_poses.append(mean_pos)
+    plt.scatter(poses[:, 0], poses[:, 1], s=10, c=colors[i-1], label=f't = {times[i]}')
+
+avg_poses = np.array(avg_poses)
+sq_errs = np.sum(np.diff(avg_poses, axis=0)**2, axis=1)
+
+print("Error between timesteps:")
+for i, err in enumerate(sq_errs):
+    print(f"{times[i]} to {times[i+1]}: {err:.4f}")
+plt.xlabel('X pos')
+plt.ylabel('Y pos')
+plt.title('Particle Filter w/ Meas. Updates')
+plt.legend()
+plt.grid(True)
+plt.show()

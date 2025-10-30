@@ -1,4 +1,3 @@
-print("Q2")
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -38,6 +37,9 @@ class ScanMatching:
     def __init__(self):
         pass
 
+    """
+    Part D).
+    """
     def RSME(self, X, Y, t_init, R_init, d_max, num_ICP_iters):
         """
         Contains all inputs for the functions below, as RMSE() runs ICP to get 
@@ -55,6 +57,9 @@ class ScanMatching:
         
         return t, R, rmse
     
+    """
+    Part C).
+    """
     def ICP(self, X, Y, t, R, d_max, iters):
         """
         X and Y are input pointclouds.
@@ -67,6 +72,9 @@ class ScanMatching:
 
         return t, R, C
     
+    """
+    Part A).
+    """
     def EstimateCorrespondences(self, X, Y, t, R, d_max):
         """
         X and Y are input pointclouds. 
@@ -106,6 +114,9 @@ class ScanMatching:
         '''
         return C
     
+    """
+    Part B).
+    """
     def ComputeOptimalRigidRegistration(self, X, Y, C):
         """
         X, Y are input pointclouds. C is a list of point correspondences.
