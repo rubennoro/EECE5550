@@ -70,12 +70,6 @@ int main(){
         i++;
     }
 
-
-    /*
-     * TODO(): Complete the CalibrateCamera() part for each image.
-     * If the difference between fx and fy is too great, then rows/cols are switched in boardSize.
-     * cv::calibrateCamera()
-     */
     std::vector<std::vector<cv::Point3f>> objectPoints;
     std::vector<std::vector<cv::Point2f>> imagePoints;
 
@@ -102,9 +96,6 @@ int main(){
     cv::Mat distCoeffs = cv::Mat::zeros(8, 1, CV_64F);
     // cv::InputOutputArray cameraMat, distCoeffs;
 
-    /*
-     * TODO() Need to calibrate for each image.
-     */
     cv::Size imgSize = images[0].size();
     double rms = cv::calibrateCamera(
         objectPoints, 
