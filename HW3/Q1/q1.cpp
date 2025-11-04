@@ -51,7 +51,7 @@ int main(){
     }
 
     std::vector<bool> founds;
-    cv::Size boardSize(6, 8);
+    cv::Size boardSize(8, 6);
     std::vector<std::vector<cv::Point2f>> corners(images.size());
     int i = 0;
 
@@ -61,12 +61,6 @@ int main(){
     for(const auto &img: images){
         bool found = cv::findChessboardCorners(img, boardSize, corners[i]);
 
-        /*
-         * TODO(): Figure out why 6th image (index 5) isn't getting corners.
-         */
-        if(!found){
-            std::cout << i << std::endl;
-        }
         founds.push_back(found);
 
         // Print out the corner points.
@@ -103,9 +97,6 @@ int main(){
     // cv::OutputArray stdDeviationsInts, stdDeviationExts, perViewErrs;
     std::vector<cv::Mat> rvecs(objectPoints.size());
     std::vector<cv::Mat> tvecs(objectPoints.size());
-
-    std::cout << objectPoints.size() << std::endl;
-    std::cout << corners.size() << std::endl;
 
     cv::Mat cameraMat = cv::Mat::eye(3, 3, CV_64F);
     cv::Mat distCoeffs = cv::Mat::zeros(8, 1, CV_64F);
