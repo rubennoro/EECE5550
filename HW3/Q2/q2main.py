@@ -67,11 +67,8 @@ class PnP:
         corners = self.extract_corners()
         k_matrix = gtsam.Cal3_S2(K[0][0], K[1][1], K[0][1], K[0][2], K[1][2])
 
-        # Initial Guess
-        initial_pose = gtsam.Pose3(
-            gtsam.Rot3.RzRyRx(1.0, 0.5, -0.3),  
-            gtsam.Point3(1, -3, 5)
-        )
+        # Set an initial guess for the camera pose (e.g., a slight offset)
+        initial_pose = gtsam.Pose3()
 
         initial_estimates = gtsam.Values()
 
@@ -88,6 +85,11 @@ class PnP:
             initial_pose = gtsam.Pose3(gtsam.Rot3(R), gtsam.Point3(tvec.flatten()))
              #print("Using OpenCV solvePnP initial pose")
         
+        initial_estimates = gtsam.Values()
+
+        pose_symbol = gtsam.symbol('x', 0)
+        initial_estimates.insert(pose_symbol, initial_pose)
+        
         # Add AprilTag corner points as known 3D points with constrained priors
         tag_corner_symbols = []
         for i, corner in enumerate(tag_corners):
@@ -98,8 +100,6 @@ class PnP:
             point_3d = gtsam.Point3(*corner)
             initial_estimates.insert(point_symbol, point_3d)
             
-            # Use Constrained noise model to FIX the positions of AprilTag corners
-            # This is equivalent to treating them as known constants
             point_prior_noise = gtsam.noiseModel.Constrained.All(3)
             self.graph.add(gtsam.PriorFactorPoint3(
                 point_symbol, 
@@ -107,7 +107,7 @@ class PnP:
                 point_prior_noise
             ))
         
-        for i in range(4):  # for the 4 corners of the AprilTag
+        for i in range(4):
             
             meas = gtsam.Point2(corners[i][0], corners[i][1])
             factor = gtsam.GenericProjectionFactorCal3_S2(
@@ -132,10 +132,10 @@ class PnP:
         
         # Construct the graph attribute
         init_ests = self.build_graph(K, tag_corners)
-        # print(init_ests)
+        #print(init_ests)
         optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, init_ests)
         result = optimizer.optimize()
-        print(f"Optimizer finished in {optimizer.iterations()} iterations.")
+        # print(f"Optimizer finished in {optimizer.iterations()} iterations.")
         return result.atPose3(gtsam.symbol('x', 0))
 
 
