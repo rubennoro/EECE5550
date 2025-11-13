@@ -62,11 +62,7 @@ int main(){
         bool found = cv::findChessboardCorners(img, boardSize, corners[i]);
 
         founds.push_back(found);
-
-        // Print out the corner points.
-        // cv::drawChessboardCorners(clones[i], boardSize, corners[i], found);
-        // cv::imshow("detection", clones[i]);
-        // cv::waitKey(1000);
+        
         i++;
     }
 

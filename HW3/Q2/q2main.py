@@ -22,6 +22,7 @@ rb = np.array([tag_len / 2, tag_len / 2, 0])
 rt = np.array([tag_len / 2, -tag_len / 2, 0])
 lt = np.array([-tag_len / 2, -tag_len / 2, 0])
 tag_corners = [lb, rb, rt, lt]
+
 '''
 Knowns:
 - AprilTag body-centric coord frame corner points
@@ -33,8 +34,8 @@ Knowns:
 Variables:
 Camera Poses X
 AprilTag Corner Points
-
 '''
+
 class PnP:
     def __init__(self, detector, image):
         self.detector = detector

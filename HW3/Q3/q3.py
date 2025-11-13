@@ -1,3 +1,9 @@
+'''
+Run this from the root directory.
+Question 3 Code:
+Jointly estimating the camera pose and apriltag poses for VisualSLAM using a factor graph and MLE.
+'''
+
 import gtsam
 import numpy as np
 import cv2
@@ -18,13 +24,14 @@ class VisualSLAM:
 
     def collect_tags(self):
         '''
-        Collects all the apriltags from all images.
+        Collects all the apriltags from all images. The self.tags becomes a list of lists
+        with each images' poses collected for their AprilTags.
         '''
         for i in range(self.num_imgs):
             self.path = f'HW3/Q2/vslam/frame_{i}.jpg'
             self.tags.append(self.detect_tags())
+        
         print("Collection Complete.\n")
-        # print(self.tags)
     
     def detect_tags(self):
         '''
@@ -38,18 +45,14 @@ class VisualSLAM:
         for tag in detections:
             # print(tag)
             id = tag['id']
-            tag_center = tag['center']
-            tag_corners = tag['lb-rb-rt-lt']
             
-            # Define the 3D coordinates of the tag corners in the tag's own coordinate frame
-            # For a square tag of size 1x1, assuming the tag is flat (z = 0)
-            tag_size = 0.15  # Example tag size in meters (adjust as needed)
-            tag_3d_points = np.array([
-                [0, 0, 0],  # Bottom-left corner
-                [tag_size, 0, 0],  # Bottom-right corner
-                [tag_size, tag_size, 0],  # Top-right corner
-                [0, tag_size, 0],  # Top-left corner
-            ], dtype=np.float32)
+            # Body-centric coords for the AprilTag0's corners.
+            tag_len = 0.01 # meters
+            lb = np.array([-tag_len / 2, tag_len / 2, 0])
+            rb = np.array([tag_len / 2, tag_len / 2, 0])
+            rt = np.array([tag_len / 2, -tag_len / 2, 0])
+            lt = np.array([-tag_len / 2, -tag_len / 2, 0])
+            tag_3d_points = np.array([lb, rb, rt, lt])
 
             # Camera intrinsic parameters
             K = np.array([
@@ -61,83 +64,114 @@ class VisualSLAM:
             tag_2d_points = np.array(tag['lb-rb-rt-lt'], dtype=np.float32)
             
             # Use this matrix in functions like solvePnP:
-            _, rvec, tvec = cv2.solvePnP(tag_3d_points, tag_2d_points, K, None)
+            _, rvec, tvec = cv2.solvePnP(tag_3d_points, tag_2d_points, K[:3, :3], None, flags=cv2.SOLVEPNP_ITERATIVE)
             R, _ = cv2.Rodrigues(rvec)
-            # print(R, tvec)
-            tags.append([id, R, tvec])
-
-            if not self.initial_values.exists(id):  # Check if the key already exists
-                tag_pose = gtsam.Pose3(gtsam.Rot3(R), gtsam.Point3(tvec[0][0], tvec[1][0], tvec[2][0]))
-                self.initial_values.insert(id, tag_pose)  # Insert the tag pose only if not present
+            pose = gtsam.Pose3(gtsam.Rot3(R), gtsam.Point3(tvec.flatten()))
+            
+            # Pose between Cam and each AprilTag
+            tags.append([id, pose])
 
         return tags
 
     def construct_graph(self):
-        prior_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1]))
-        self.graph.add(gtsam.PriorFactorPose3(1, gtsam.Pose3(gtsam.Rot3(), gtsam.Point3(0, 0, 0)), prior_noise))
-        
-        for i in range(self.num_imgs):
-            for tag_id, R, tvec in self.tags[i]:
-                camera_pose = gtsam.Pose3(gtsam.Rot3(), gtsam.Point3(0, 0, 0))  # Replace with actual camera pose if available
-                self.initial_values.insert(i + 1, camera_pose)
+        '''
+        Building the factor graph.
+        '''
 
-                # Create relative pose (BetweenFactor) between camera pose X_i and tag pose Y_j
-                tag_pose = gtsam.Pose3(gtsam.Rot3(R), gtsam.Point3(tvec[0][0], tvec[1][0], tvec[2][0]))
-                relative_pose = gtsam.Pose3(gtsam.Rot3(R), gtsam.Point3(tvec[0][0], tvec[1][0], tvec[2][0]))
-                self.graph.add(gtsam.BetweenFactorPose3(i + 1, tag_id, relative_pose, self.noise_model))
-        
+        # Prior Factor is AprilTag 0 at world origin
+        self.graph.add(
+            gtsam.PriorFactorPose3(
+                gtsam.symbol('t', 0),
+                gtsam.Pose3(gtsam.Rot3(), gtsam.Point3(0, 0, 0)),
+                gtsam.noiseModel.Constrained.All(6)
+            )
+        )
+        # Initialize it in initial values
+        self.initial_values.insert(gtsam.symbol('t', 0), gtsam.Pose3())
+
+        # For each image
+        for i, detections in enumerate(self.tags):
+            cam_key = gtsam.symbol('x', i)
+
+            # Add initial guess for camera if not first frame
+            if not self.initial_values.exists(cam_key):
+                self.initial_values.insert(cam_key, gtsam.Pose3())
+
+            # Get the pose from each AprilTag.
+            for tag_id, tag_pose_cam in detections:
+                tag_key = gtsam.symbol('t', tag_id)
+
+                # Add BetweenFactor between camera and tag
+                self.graph.add(
+                    gtsam.BetweenFactorPose3(
+                        cam_key,
+                        tag_key,
+                        tag_pose_cam,
+                        self.noise_model
+                    )
+                )
+
+                # Add initial guess for tag pose if not already
+                if not self.initial_values.exists(tag_key):
+                    # Transform tag pose from camera frame to world frame
+                    cam_pose = self.initial_values.atPose3(cam_key)
+                    world_T_tag = cam_pose.compose(tag_pose_cam)
+                    self.initial_values.insert(tag_key, world_T_tag)
+
+        print("Factor graph built.")
+    
     def solve_graph(self):
-
+        '''
+        The main function, collecting the apriltag estimations, constructing the factor graph, optimizing the MLE, and plotting the output.
+        '''
         self.collect_tags()
         self.construct_graph()
 
-        # Create the optimizer (using Levenberg-Marquardt optimizer)
         optimizer = gtsam.LevenbergMarquardtOptimizer(self.graph, self.initial_values)
-
-        # Optimize the factor graph
         result = optimizer.optimize()
+        
+        print("Optimization complete.")
+        
+        self.plot_poses(result)
 
-        camera_poses = []
-        tag_poses = []
-
-        # Extract the optimized camera poses
-        for i in range(1, self.num_imgs + 1):
-            camera_poses.append(result.atPose3(i).translation())  # Extract the camera pose
-
-        # Extract the optimized tag poses
-        for tag_id in range(1, len(self.tags) + 1):
-            tag_poses.append(result.atPose3(tag_id).translation())  # Extract the tag pose
-
-        self.plot_poses(camera_poses, tag_poses)
-
-    def plot_poses(self, camera_poses, tag_poses):
+    def plot_poses(self, result):
         '''
-        Plot the optimized camera and tag poses.
+        Plots the optimized results of the MLE for the apriltag poses and camera poses.
         '''
-        # Convert camera and tag poses to numpy arrays
-        camera_poses = np.array(camera_poses)
-        tag_poses = np.array(tag_poses)
-
-        # Plotting in 3D using matplotlib
+        num_cams = self.num_imgs
+        tag_ids=[tag_id for tag_id, _ in self.tags[0]]
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
-        # Plot camera poses (blue)
-        ax.scatter(camera_poses[:, 0], camera_poses[:, 1], camera_poses[:, 2], color='b', label='Camera Poses')
+        cam_x, cam_y, cam_z = [], [], []
+        tag_x, tag_y, tag_z = [], [], []
 
-        # Plot tag poses (red)
-        ax.scatter(tag_poses[:, 0], tag_poses[:, 1], tag_poses[:, 2], color='r', label='Tag Poses')
+        for i in range(num_cams):
+            key = gtsam.symbol('x', i)
+            if result.exists(key):
+                pose = result.atPose3(key)
+                t = pose.translation()
+                cam_x.append(t[0]); cam_y.append(t[1]); cam_z.append(t[2])
 
-        # Set labels
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
-        ax.set_title('Camera and Tag Poses')
+        for j in tag_ids:
+            key = gtsam.symbol('t', j)
+            if result.exists(key):
+                pose = result.atPose3(key)
+                t = pose.translation()
+                tag_x.append(t[0]); tag_y.append(t[1]); tag_z.append(t[2])
 
-        # Show the legend
+        # Plot cameras (blue)
+        ax.scatter(cam_x, cam_y, cam_z, c='b', marker='o', label='Cameras')
+
+        # Plot tags (red)
+        ax.scatter(tag_x, tag_y, tag_z, c='r', marker='^', label='Tags')
+
+        # Draw coordinate axes
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_zlabel('Z (m)')
         ax.legend()
-
-        # Show the plot
+        ax.set_title('Jointly Estimated Camera and Tag Poses')
         plt.show()
     
 vis_slam = VisualSLAM(num_images)
